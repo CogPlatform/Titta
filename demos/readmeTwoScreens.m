@@ -33,7 +33,7 @@ doBimonocularCalibration= false;
 fixTime                 = .5;
 imageTime               = 4;
 scrPresenter            = 1;
-scrOperator             = 2;
+scrOperator             = 0;
 
 % You can run addTittaToPath once to "install" it, or you can simply add a
 % call to it in your script so each time you want to use Titta, it is
@@ -91,17 +91,19 @@ try
         % make screen partially transparent on OSX and windows vista or
         % higher, so we can debug.
         PsychDebugWindowConfiguration;
-    end
+	end
+	Screen('Preference', 'VisualDebugLevel', 3)
     if DEBUGlevel
         % Be pretty verbose about information and hints to optimize your code and system.
         Screen('Preference', 'Verbosity', 4);
     else
-        % Only output critical errors and warnings.
+        % Only outpuHHHHHSt critical errors and warnings.
         Screen('Preference', 'Verbosity', 2);
-    end
+	end
+	PsychDefaultSetup(2);
     Screen('Preference', 'SyncTestSettings', 0.002);    % the systems are a little noisy, give the test a little more leeway
-    [wpntP,winRectP] = PsychImaging('OpenWindow', scrPresenter, bgClr, [], [], [], [], 4);
-    [wpntO,winRectO] = PsychImaging('OpenWindow', scrOperator , bgClr, [], [], [], [], 4);
+    [wpntP,winRectP] = PsychImaging('OpenWindow', scrPresenter, 0.5);
+    [wpntO,winRectO] = PsychImaging('OpenWindow', scrOperator , 0.5, [0 0 2000 1500]);
     hz=Screen('NominalFrameRate', wpntP);
     Priority(1);
     Screen('BlendFunction', wpntP, GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
@@ -117,7 +119,7 @@ try
     % do calibration
     try
         ListenChar(-1);
-    catch ME
+    catch ME 
         % old PTBs don't have mode -1, use 2 instead which also supresses
         % keypresses from leaking through to matlab
         ListenChar(2);
@@ -176,9 +178,7 @@ try
         Screen('gluDisk',wpntO,fixClrs(1),winRectO(3)/2,winRectO(4)/2,round(winRectO(3)/100));
         drawLiveData(wpntO,EThndl.buffer,500,settings.freq,eyeColors{:},4,winRectO(3:4));
         Screen('Flip',wpntO);
-    end
-        
-    
+	end
     % show on screen and log when it was shown in eye-tracker time.
     % NB: by setting a deadline for the flip, we ensure that the previous
     % screen (fixation point) stays visible for the indicated amount of
@@ -266,6 +266,9 @@ try
 catch me
     sca
     ListenChar(0);
+	if exist('EThndl','var') && isa(EThndl,'Titta');
+		EThndl.deInit();
+	end
     rethrow(me)
 end
 sca

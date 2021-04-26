@@ -100,7 +100,7 @@ try
     
     % do calibration
     try
-        ListenChar(-1);
+%         ListenChar(-1);
     catch ME
         % old PTBs don't have mode -1, use 2 instead which also supresses
         % keypresses from leaking through to matlab
