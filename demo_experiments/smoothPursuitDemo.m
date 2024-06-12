@@ -10,7 +10,7 @@
 % trackers. Behavior Research Methods.
 % doi: https://doi.org/10.3758/s13428-020-01358-8
 
-clear all
+clear
 sca
 
 DEBUGlevel              = 0;
@@ -20,6 +20,7 @@ useAnimatedCalibration  = true;
 doBimonocularCalibration= false;
 runInDummyMode          = false;
 scr                     = max(Screen('Screens'));
+address					= 'tet-tcp://169.254.7.39';
 % task parameters
 fixTime                 = 1.2;          % s
 dur                     = 4;            % s
@@ -76,7 +77,7 @@ try
     if runInDummyMode
         EThndl          = EThndl.setDummyMode();
     end
-    EThndl.init();
+    EThndl.init(address);
     
     if DEBUGlevel>1
         % make screen partially transparent on OSX and windows vista or
@@ -185,6 +186,7 @@ try
     
     % save data to mat file, adding info about the experiment
     dat                 = EThndl.collectSessionData();
+	dat.expt.winRect	= winRect;
     dat.expt.resolution = winRect(3:4);
     dat.expt.stim       = stim;
     EThndl.saveData(dat, fullfile(cd,'t'), true);

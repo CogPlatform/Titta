@@ -29,19 +29,26 @@
 % So if your two monitors have different resolutions, either adjust the
 % code, or look into solutions e.g. with PsychImaging()'s 'UsePanelFitter'.
 
-clear all
+clear
 sca
 
 DEBUGlevel              = 0;
 fixClrs                 = [0 255];
 bgClr                   = 127;
 eyeColors               = {[255 127 0],[0 95 191]}; % for live data view on operator screen
-videoFolder             = fullfile(PsychtoolboxRoot,'PsychDemos/MovieDemos/');
-videoExt                = 'mov';
+videoFolder             = '/home/cog5/Documents/CalibrationVideos/';
+videoExt                = 'mp4';
 numCalPoints            = 2;        % 2, 3 or 5
 forceRewardButton       = 'j';
-scrParticipant          = 1;
-scrOperator             = 2;
+if IsWin
+	scrParticipant          = 1;
+	scrOperator             = 2;
+	address					= []; %leave empty to autodiscover
+else
+	scrParticipant          = 1;
+	scrOperator             = 0;
+	address					= 'tet-tcp://169.254.7.39'; %edit for your explicit address, 
+end
 % task parameters
 imageTime               = 4;
 % gaze contingent fixation point setup
@@ -130,7 +137,7 @@ try
     % init
     EThndl          = Titta(settings);
     % EThndl          = EThndl.setDummyMode();    % just for internal testing, enabling dummy mode for this readme makes little sense as a demo
-    EThndl.init();
+    EThndl.init(address);
     calController.EThndl = EThndl;
     nLiveDataPoint  = ceil(dataWindowDur*EThndl.frequency);
     
@@ -148,7 +155,9 @@ try
     end
     Screen('Preference', 'SyncTestSettings', 0.002);    % the systems are a little noisy, give the test a little more leeway
     [wpntP,winRectP] = PsychImaging('OpenWindow', scrParticipant, bgClr, [], [], [], [], 4);
-    [wpntO,winRectO] = PsychImaging('OpenWindow', scrOperator , bgClr, [], [], [], [], 4);
+    [w,h]  = Screen('WindowSize',scrOperator);
+	winrect	= [0 0 round(w/1.25) round(h/1.25)];
+    [wpntO,winRectO] = PsychImaging('OpenWindow', scrOperator   , bgClr, winrect, [], [], [], 4, [], kPsychGUIWindow);
     hz=Screen('NominalFrameRate', wpntP);
     Priority(1);
     Screen('BlendFunction', wpntP, GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);

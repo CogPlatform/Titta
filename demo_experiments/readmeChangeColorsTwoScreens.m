@@ -10,7 +10,7 @@
 % trackers. Behavior Research Methods.
 % doi: https://doi.org/10.3758/s13428-020-01358-8
 
-clear all
+clear
 sca
 
 DEBUGlevel              = 0;
@@ -39,8 +39,13 @@ end
 eyeColors               = {[255 127 0],[0 95 191]}; % for live data view on operator screen
 useAnimatedCalibration  = true;
 doBimonocularCalibration= false;
-scrParticipant          = 1;
-scrOperator             = 2;
+if IsWin
+	scrParticipant          = 2;
+	scrOperator             = 1;
+else
+	scrParticipant          = 1;
+	scrOperator             = 0;
+end
 % task parameters
 fixTime                 = .5;
 imageTime               = 4;
@@ -103,7 +108,7 @@ try
     % init
     EThndl          = Titta(settings);
     % EThndl          = EThndl.setDummyMode();    % just for internal testing, enabling dummy mode for this readme makes little sense as a demo
-    EThndl.init();
+    EThndl.init('tet-tcp://169.254.7.39');
     nLiveDataPoint  = ceil(dataWindowDur*EThndl.frequency);
     
     PsychDefaultSetup(2);   % requests 0--1 color range, amongst other things. For testing that interface works in this mode too
@@ -118,10 +123,13 @@ try
     else
         % Only output critical errors and warnings.
         Screen('Preference', 'Verbosity', 2);
+		Screen('Preference', 'VisualDebugLevel', 3);
     end
     Screen('Preference', 'SyncTestSettings', 0.002);    % the systems are a little noisy, give the test a little more leeway
     [wpntP,winRectP] = PsychImaging('OpenWindow', scrParticipant, bgClr, [], [], [], [], 4);
-    [wpntO,winRectO] = PsychImaging('OpenWindow', scrOperator   , bgClr, [], [], [], [], 4);
+	[w,h]  = Screen('WindowSize',scrOperator);
+	winrect	= [0 0 round(w/1.25) round(h/1.25)];
+    [wpntO,winRectO] = PsychImaging('OpenWindow', scrOperator   , bgClr, winrect, [], [], [], 4,[],kPsychGUIWindow);
     hz=Screen('NominalFrameRate', wpntP);
     Priority(1);
     Screen('BlendFunction', wpntP, GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
