@@ -13,9 +13,11 @@
 classdef TalkToProLab < handle
     properties (Access = protected, Hidden = true)
         stimTimeStamps;
+        synchronizer;
     end
     
     properties (SetAccess=protected)
+        isTwoComputerSetup;
         % websocket connections we need
         clientClock;
         clientProject;
@@ -27,29 +29,25 @@ classdef TalkToProLab < handle
     end
     
     methods
-        function this = TalkToProLab(expectedProject,doCheckSync,IPorFQDN)
-            % doCheckSync: set to false to skip checking sync between Pro
-            % Lab clock and system clock. The sync routine is the only part
-            % of this toolbox that uses PsychToolbox functionality
-            % (GetSecs), so you may wish to skip it if using without
-            % PsychToolbox. The sync routine also checks that Pro Lab and
-            % TalkToProLab are running on the same machine. That is not a
-            % strict requirement for running this code, but if you use it
-            % with Pro Lab running on another machine, you are responsible
-            % yourself for presenting TalkToProLab with timestamps in Pro
-            % Lab's time, not that of the local machine. If you want to use
-            % this class with Pro Lab running elsewhere, use the third
-            % input argument to provide the IP or FQDN where Pro Lab can be
-            % contacted. After running this constructor, you can use
-            % TalkToProLab.clientClock to directly talk to the clock
-            % service and figure out (and monitor every now and then!) the
-            % clock offset between the two systems.
-            if nargin<2
-                doCheckSync = true;
-            end
-            if nargin<3
+        function this = TalkToProLab(expectedProject,IPorFQDN)
+            % IPorFQDN: By default, TalkToProLab will connect to a Pro Lab
+            % instance on the local computer. If you want to connect to Pro
+            % Lab on another computer, specify that computer's IP as this
+            % parameter.
+            %
+            % When connected to Pro Lab on a remote computer, timestamps
+            % provided to sendStimulusEvent and sendCustomEvent will be
+            % automatically converted from the local computer's clock to
+            % the Pro Lab computer's clock. This conversation requires the 
+            % clocks of the two computers to be synced, which will be done
+            % automatically whenever needed (automatically determined by
+            % the sync code). Depending on network performance, such a sync
+            % will take about 60 ms or more. Be aware of these possible
+            % slowdowns when calling sendStimulusEvent and sendCustomEvent.
+            if nargin<2 || isempty(IPorFQDN)
                 IPorFQDN = 'localhost';
             end
+            this.isTwoComputerSetup = ~strcmp(IPorFQDN,'localhost');
             
             % check WebSocketClient java class required for SimpleWSClient
             % is available
@@ -96,33 +94,44 @@ classdef TalkToProLab < handle
                 warning('TalkToProLab is compatible with Tobii Pro Lab''s external presenter API version 1.0, your Lab software provides version %s. If the code does not crash, check carefully that it works correctly',resp.version);
             end
             
-            % check our local clock is the same as the ProLabClock. for now
-            % we do not support it when they aren't (e.g. running lab on a
-            % different machine than the stimulus presentation machine)
-            if doCheckSync
-                nTimeStamp = 40;
-                [timesPTB,timesLab] = deal(zeros(nTimeStamp,1,'int64'));
-                request = matlab.internal.webservices.toJSON(struct('operation','GetTimestamp'));   % save conversion-to-JSON overhead so below requests are fired asap
-                % ensure response is cleared
-                [~] = this.clientClock.lastRespText;
+            % check sync between local clock and the Pro Lab clock
+            titMex = TittaMex;
+            nTimeStamp = 40;
+            request = matlab.internal.webservices.toJSON(struct('operation','GetTimestamp'));   % save conversion-to-JSON overhead so below requests are fired asap
+            % ensure response is cleared
+            [~] = this.clientClock.lastRespText;
+            if this.isTwoComputerSetup
+                % we need a synchronizer
+                this.synchronizer = Synchronizer(@titMex.systemTimestamp, @()getRemoteTime(this.clientClock, request));
+                % warm it up
+                this.synchronizer.doSync();
+                pause(0.2)  % not too little time between the two syncs, so we don't get singular matrix warning troubles
+                this.synchronizer.doSync();
+
+                % check it works ok
+                [timesRemote, timesLocalAsRemote] = deal(zeros(nTimeStamp,1,'int64'));
                 for p=1:nTimeStamp
-                    if mod(p-1,10)<5
-                        PTBtime = GetSecs;
-                        this.clientClock.send(request);
-                    else
-                        this.clientClock.send(request);
-                        PTBtime = GetSecs;
-                    end
-                    % prep PTB timestamp
-                    timesPTB(p) = int64(PTBtime*1000*1000);
-                    % wait for response
-                    resp = waitForResponse(this.clientClock,'GetTimestamp');
-                    timesLab(p) = sscanf(resp.timestamp,'%ld');
+                    t1 = titMex.systemTimestamp();
+                    timesRemote(p) = getRemoteTime(this.clientClock, request);
+                    t2 = titMex.systemTimestamp();
+                    timesLocalAsRemote(p) = this.synchronizer.localTimeToRemote((t1+t2)/2);
                 end
-                % get rough estimate of clock offset (note this is includes
-                % half RTT which is not taken into account, thats ok for our
-                % purposes)
-                assert(mean(timesLab-timesPTB)<2500,'TalkToProLab: Clock offset between PsychToolbox and Tobii Pro Lab is more than 2.5 ms: either the two are not using the same clock (unsupported) or you are running PsychToolbox and Tobii Pro Lab on different computers (also unsupported)')
+                syncOff = median(abs(timesRemote-timesLocalAsRemote));
+                assert(abs(syncOff)<2500,'TalkToProLab: Clock offset between remote Tobii Pro Lab and local time synced to remote time is more than 2.5 ms: synchronization to remote Tobii Pro Lab is not working correctly')
+            else
+                % for connection to local computer, just check clocks are
+                % ok, for safety
+                [timesLocalReq,timesLocalResp,timesRemote] = deal(zeros(nTimeStamp,1,'int64'));
+                for p=1:nTimeStamp
+                    timesLocalReq(p) = titMex.systemTimestamp;
+                    timesRemote(p) = getRemoteTime(this.clientClock, request);
+                    timesLocalResp(p) = titMex.systemTimestamp;
+                end
+                % get best estimate of clock offset (i.e., use sync with lowest
+                % RTT)
+                [~,i] = min(timesLocalResp-timesLocalReq);
+                syncOff = (timesLocalResp(i) + timesLocalReq(i))/2 - timesRemote(i);
+                assert(abs(syncOff)<2500,'TalkToProLab: Sanity check failed: Clock offset between TittaMex and Tobii Pro Lab is more than 2.5 ms: either the two are not using the same clock (unsupported)')
             end
             
             % get info about opened project
@@ -133,7 +142,7 @@ classdef TalkToProLab < handle
             fprintf('TalkToProLab: Connected to Tobii Pro Lab, currently opened project is ''%s'' (%s)\n',resp.project_name,resp.project_id);
             
             % prep list of timestamps sent through stimulus messages
-            this.stimTimeStamps = simpleVec(int64([0 0]),1024);     % (re)initialize with space for 1024 stimulus intervals
+            this.stimTimeStamps = simpleVec(int64([0 0 0 0]),1024); % (re)initialize with space for 1024 stimulus intervals
         end
         
         function delete(this)
@@ -142,7 +151,7 @@ classdef TalkToProLab < handle
             this.projectID      = '';
             this.participantID  = '';
             this.recordingID    = '';
-            this.stimTimeStamps = simpleVec(int64([0 0]),1024);     % (re)initialize with space for 1024 stimulus intervals
+            this.stimTimeStamps = simpleVec(int64([0 0 0 0]),1024); % (re)initialize with space for 1024 stimulus intervals
         end
         
         function disconnect(this)
@@ -293,40 +302,10 @@ classdef TalkToProLab < handle
             
             request = struct('operation','AddAois',...
                 'media_id',mediaID);
-            % build up AOI object
-            AOI = struct('name',aoiName);
-            % color
-            if isnumeric(aoiColor)    % else we assume its a hexadecimal string already
-                % turn into RGBA so that user can provide also single gray
-                % value, etc
-                aoiColor = round(color2RGBA(aoiColor));
-                aoiColor = reshape(dec2hex(aoiColor(1:3)).',1,[]);
+            if nargin<6
+                tags = [];
             end
-            AOI.color = aoiColor;
-            % vertices
-            assert(size(vertices,1)==2,'TalkToProLab: attachAOIToImage: AOI vertices should be a 2xN array')
-            nVert = size(vertices,2);
-            AOI.key_frames{1}.is_active = true;
-            AOI.key_frames{1}.time      = int64(0);     % microseconds, appears to be ignored for image media, set to 0 anyway to be safe
-            AOI.key_frames{1}.vertices  = repmat(struct('x',0,'y',0),1,nVert);
-            vertices = num2cell(vertices);
-            [AOI.key_frames{1}.vertices.x] = vertices{1,:};
-            [AOI.key_frames{1}.vertices.y] = vertices{2,:};
-            % tags
-            if nargin>5 && ~isempty(tags)
-                if ~iscell(tags)
-                    tags = num2cell(tags);
-                end
-                for t=1:length(tags)
-                    if isempty(tags{t}.group_name)
-                        tags{t} = rmfield(tags{t},'group_name');
-                    end
-                end
-                AOI.tags = tags;
-            else
-                AOI.tags = {};
-            end
-            request.aois = {AOI};       % enclose in cell so it becomes a json array
+            request.aois = {formatAOIForRequest(aoiName, aoiColor, vertices, 'image', tags)};   % enclose in cell so it becomes a json array
             request.merge_mode = 'replace_aois';
             
             % send and wait till successfully processed
@@ -334,18 +313,36 @@ classdef TalkToProLab < handle
             waitForResponse(this.clientProject,'AddAois');
         end
         
-        function attachAOIToVideo(this,mediaName,request)
-            % This function gives the user little help, and assumes that
-            % they read the Tobii Pro Lab API and deliver a properly
-            % formatted request. Request is the full struct to be converted
-            % to json, except for the 'media_id', and 'operation', which
-            % are added below
-            [mediaID,mediaInfo] = this.findMedia(name);
+        function attachAOIToVideo(this,mediaName,aoiName,aoiColor,key_frame_vertices,tags)
+            % users are responsible for correctly setting up
+            % key_frame_vertices. key_frame_vertices should be a
+            % struct-array, with each element containing the following
+            % three fields:
+            % - is_active: boolean (true/false) indicating whether the AOI
+            %   is active from this frame onward (until the next key
+            %   frame).
+            % - time: integer (microseconds) locating the keyframe in time.
+            % - vertices: vertices describing the AOI (should be 2xN
+            %   matrix).
+            % key_frame_vertices entries should be sorted in time.
+            % example:
+            % key_frame_vertices.is_active = true;
+            % key_frame_vertices.time = 0;
+            % key_frame_vertices.vertices = [500 600 600 500; 500 500 600 600];
+            % key_frame_vertices(2).is_active = false;
+            % key_frame_vertices(2).time = 1000000;
+            % key_frame_vertices(2).vertices = [500 600 600 500; 500 500 600 600];
+            [mediaID,mediaInfo] = this.findMedia(mediaName);
             assert(~isempty(mediaID),'TalkToProLab: attachAOIToVideo: no media with provided name, ''%s'' is known',mediaName)
-            assert(~isempty(strfind(mediaInfo.mime_type,'video')),'TalkToProLab: attachAOIToVideo: media with name ''%s'' is not an image, but a %s',mediaName,mediaInfo.mime_type)
+            assert(~isempty(strfind(mediaInfo.mime_type,'video')),'TalkToProLab: attachAOIToVideo: media with name ''%s'' is not a video, but a %s',mediaName,mediaInfo.mime_type)
             
-            request.operation = 'AddAois';
-            request.media_id  = mediaID;
+            request = struct('operation','AddAois',...
+                'media_id',mediaID);
+            if nargin<6
+                tags = [];
+            end
+            request.aois = {formatAOIForRequest(aoiName, aoiColor, key_frame_vertices, 'video', tags)};   % enclose in cell so it becomes a json array
+            request.merge_mode = 'replace_aois';
             
             % send and wait till successfully processed
             this.clientProject.send(request);
@@ -391,7 +388,7 @@ classdef TalkToProLab < handle
             % Tobii Pro Lab
             fillerName  = '!!emptyIntervalFiller!!';
             ts          = sortrows(this.stimTimeStamps.data,1);                     % events can be sent in any order, will be assembled by Tobii Pro Lab into correct order. Fix that up here
-            iGap        = find(ts(2:end,1)-ts(1:end-1,2) > 0 & ts(1:end-1,2)~=-1);  % end time can also be -1, in which case its automatically set to start time of next event. Ignore those
+            iGap        = find(ts(2:end,3)-ts(1:end-1,4) > 0 & ts(1:end-1,4)~=-1);  % end time can also be -1, in which case its automatically set to start time of next event. Ignore those
             if ~isempty(iGap)
                 mediaID = this.findMedia(fillerName);
                 % see if we already have our fake filler media in this
@@ -402,8 +399,8 @@ classdef TalkToProLab < handle
                 end
                 % now plug the gaps
                 for g=1:length(iGap)
-                    st = ts(iGap(g)  ,2);   % start time of gap filler is end time of previous
-                    et = ts(iGap(g)+1,1);   % end time of gap filler is start time of next
+                    st = ts(iGap(g)  ,4);   % start time of gap filler is end time of previous
+                    et = ts(iGap(g)+1,3);   % end time of gap filler is start time of next
                     this.sendStimulusEvent(mediaID,[],st,et,[],false);
                 end
             end
@@ -411,21 +408,23 @@ classdef TalkToProLab < handle
             % now send finalize
             this.clientEP.send(struct('operation','FinalizeRecording','recording_id',this.recordingID));
             waitForResponse(this.clientEP,'FinalizeRecording');
-            this.recordingID= '';
+            this.recordingID = '';
         end
         
         function discardRecording(this)
             this.clientEP.send(struct('operation','DiscardRecording','recording_id',this.recordingID));
             waitForResponse(this.clientEP,'DiscardRecording');
-            this.recordingID= '';
+            this.recordingID = '';
         end
         
         function sendStimulusEvent(this,mediaID,mediaPosition,startTimeStamp,endTimeStamp,background,qDoTimeConversion)
             % mediaPosition, endTimeStamp, background are optional, can be
             % left empty or not provided in call
-            % NB: startTimeStamp and endTimeStamp are in Pro Lab time,
-            % which is different from local/caller time when running a
-            % two-computer setup. See notes in TalkToProLab constructor
+            % NB: startTimeStamp and endTimeStamp should be provided in
+            % local time (in seconds, as provided by PsychToolbox). These
+            % will be converted to Pro Lab time, and if needed synchronized
+            % to function correctly when running a two-computer setup. See
+            % notes in TalkToProLab constructor.
             % qDoTimeConversion (from s to ms) is for internal use, do not
             % set it unless you know what you are doing.
             if nargin<7 || qDoTimeConversion
@@ -449,18 +448,32 @@ classdef TalkToProLab < handle
             % 2. start time
             st = startTimeStamp;
             if qDoTimeConversion
-                st = int64(st*1000*1000);
+                st = Titta.getTimeAsSystemTime(st);     % convert timestamp for PTB time to Tobii system time
+                rst = st;
+                if this.isTwoComputerSetup
+                    rst = this.synchronizer.localTimeToRemote(rst);
+                end
+            else
+                rst = st;
             end
-            request.start_timestamp = st;           % convert timeStamps from PTB time to Tobii Pro Lab time
+            request.start_timestamp = rst;
             % 3. end time
             if nargin>4 && ~isempty(endTimeStamp)
                 et = endTimeStamp;
                 if qDoTimeConversion
-                    et = int64(et*1000*1000);
+                    et = Titta.getTimeAsSystemTime(et);     % convert timestamp for PTB time to Tobii system time
+                    ret = et;
+                    if this.isTwoComputerSetup
+                        this.synchronizer.doSyncIfNeeded();
+                        ret = this.synchronizer.localTimeToRemote(ret);
+                    end
+                else
+                    ret = et;
                 end
-                request.end_timestamp = et;         % convert timeStamps from PTB time to Tobii Pro Lab time
+                request.end_timestamp = ret;
             else
                 et = int64(-1);
+                ret = et;
             end
             if nargin>5 && ~isempty(background)
                 if isnumeric(background)    % else we assume its a hexadecimal string already
@@ -477,13 +490,15 @@ classdef TalkToProLab < handle
             waitForResponse(this.clientEP,'SendStimulusEvent');
             
             % store sent timestamps
-            this.stimTimeStamps.append([st et]);
+            this.stimTimeStamps.append([st et rst ret]);
         end
         
         function sendCustomEvent(this,timestamp,eventType,value)
-            % NB: timeStamp are in Pro Lab time, which is different from
-            % local/caller time when running a two-computer setup. See
-            % notes in TalkToProLab constructor
+            % NB: timestamp should be provided in local time (in seconds,
+            % as provided by PsychToolbox). It will be converted to Pro Lab
+            % time, and if needed synchronized to function correctly when
+            % running a two-computer setup. See notes in TalkToProLab
+            % constructor.
             request = struct('operation','SendCustomEvent',...
                 'recording_id',this.recordingID);
             
@@ -491,7 +506,12 @@ classdef TalkToProLab < handle
             if isempty(timestamp)
                 timestamp = GetSecs();
             end
-            request.timestamp = int64(timestamp*1000*1000);
+            timestamp = Titta.getTimeAsSystemTime(timestamp);   % convert timestamp for PTB time to Tobii system time
+            if this.isTwoComputerSetup
+                this.synchronizer.doSyncIfNeeded();
+                timestamp = this.synchronizer.localTimeToRemote(timestamp);
+            end
+            request.timestamp = timestamp;
             request.event_type= eventType;
             if nargin>3 && ~isempty(value)
                 value = regexprep(value,'[\n\r]','||'); % can't contain newlines/linefeeds
@@ -502,6 +522,14 @@ classdef TalkToProLab < handle
             % send
             this.clientEP.send(request);
             waitForResponse(this.clientEP,'SendCustomEvent');
+        end
+
+        function hist = getSyncHistory(this)
+            if ~this.isTwoComputerSetup
+                hist = [];
+            else
+                hist = this.synchronizer.getSyncHistory();
+            end
         end
     end
     
@@ -559,4 +587,73 @@ switch status
     otherwise
         str = '!!unknown status code';
 end
+end
+
+function AOI = formatAOIForRequest(aoiName, aoiColor, vertices, verticesMode, tags)
+    % build up AOI object
+    AOI = struct('name',aoiName);
+    % color
+    if isnumeric(aoiColor)    % else we assume its a hexadecimal string already
+        % turn into RGBA so that user can provide also single gray
+        % value, etc
+        aoiColor = round(color2RGBA(aoiColor));
+        aoiColor = reshape(dec2hex(aoiColor(1:3)).',1,[]);
+    end
+    AOI.color = aoiColor;
+    % vertices
+    switch verticesMode
+        case 'image'
+            AOI.key_frames{1} = formatAOIVertices(true,0,vertices,'attachAOIToImage'); % NB: time appears to be ignored for image media, but set to 0 anyway to be safe
+        case 'video'
+            nKeyFrames = length(vertices);
+            addFrame = vertices(1).time>0;
+            AOI.key_frames = cell(1,nKeyFrames+addFrame);
+            if addFrame
+                % first key frame must be at t=0, add one
+                AOI.key_frames{1} = formatAOIVertices(false,0,vertices(1).vertices,'attachAOIToVideo');
+            end
+            for f=1+addFrame:nKeyFrames+addFrame
+                AOI.key_frames{f} = formatAOIVertices( ...
+                    vertices(f-addFrame).is_active, ...
+                    vertices(f-addFrame).time, ...
+                    vertices(f-addFrame).vertices, ...
+                    'attachAOIToVideo');
+            end
+        otherwise
+            error('Vertex mode %s unknown', verticesMode);
+    end
+    % tags
+    if nargin>5 && ~isempty(tags)
+        if ~iscell(tags)
+            tags = num2cell(tags);
+        end
+        for t=1:length(tags)
+            if isempty(tags{t}.group_name)
+                tags{t} = rmfield(tags{t},'group_name');
+            end
+        end
+        AOI.tags = tags;
+    else
+        AOI.tags = {};
+    end
+end
+
+function key_frames = formatAOIVertices(is_active,time,vertices,functionName)
+assert(size(vertices,1)==2,'TalkToProLab: %s: AOI vertices should be a 2xN array',functionName)
+nVert = size(vertices,2);
+key_frames.is_active = ~~is_active;
+key_frames.time      = int64(time);      % microseconds
+key_frames.vertices  = repmat(struct('x',0,'y',0),1,nVert);
+vertices = num2cell(vertices);
+[key_frames.vertices.x] = vertices{1,:};
+[key_frames.vertices.y] = vertices{2,:};
+end
+
+function remoteT = getRemoteTime(clientClock, request)
+if nargin<2
+    request = matlab.internal.webservices.toJSON(struct('operation','GetTimestamp'));
+end
+clientClock.send(request);
+resp = waitForResponse(clientClock,'GetTimestamp');
+remoteT = sscanf(resp.timestamp,'%ld');
 end

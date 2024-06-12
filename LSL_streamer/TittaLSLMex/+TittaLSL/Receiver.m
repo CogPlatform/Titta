@@ -5,10 +5,14 @@ classdef Receiver < TittaLSL.detail.Base
     end
 
     methods (Static)
-        function streamInfos = GetStreams(streamType)
+        function streamInfos = GetStreams(streamType, timeout)
             fnc = TittaLSL.detail.Base.getMexFnc();
-            if nargin>1
-                streamInfos = fnc('GetStreams',ensureStringIsChar(streamType));
+            if nargin>1 && ~isempty(timeout)
+                streamType = ensureStringIsChar(streamType);
+                streamInfos = fnc('GetStreams',streamType,double(timeout));
+            elseif nargin>0 && ~isempty(streamType)
+                streamType = ensureStringIsChar(streamType);
+                streamInfos = fnc('GetStreams',streamType);
             else
                 streamInfos = fnc('GetStreams');
             end
@@ -32,6 +36,10 @@ classdef Receiver < TittaLSL.detail.Base
             else
                 this.newInstance('Receiver', streamSourceID);
             end
+        end
+
+        function delete(this)
+            this.stop(true);
         end
         
         

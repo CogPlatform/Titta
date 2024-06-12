@@ -9,6 +9,8 @@ classdef VideoPlayer < handle
         playingVidDur;
         loopSingleVid;
 
+        lastTex = 0;
+
         nextVidIndex = nan;
         nextVid;
         nextVidDur;
@@ -29,6 +31,8 @@ classdef VideoPlayer < handle
 
         % indicates if a video is currently playing
         isPlaying = false;
+
+        soundVolume = 0;
     end
 
     properties (Dependent)
@@ -37,10 +41,10 @@ classdef VideoPlayer < handle
     end
     
     methods
-        function obj = VideoPlayer(wpnt,videos)
+        function obj = VideoPlayer(wpnt,videos,soundVolume)
             % Construct VideoPlayer instance
             %
-            %    EThndl = VideoPlayer(WPNT,VIDEOS)
+            %    EThndl = VideoPlayer(WPNT,VIDEOS,SOUNDVOLUME)
             
             obj.wpnt = wpnt;
             
@@ -55,6 +59,10 @@ classdef VideoPlayer < handle
                 assert(exist(videos(v),'file')==2,'Video file "%s" not found',videos(v))
             end
             obj.videos = videos(:).';
+
+            if nargin>2 && ~isempty(soundVolume)
+                obj.soundVolume = soundVolume;
+            end
         end
         
         function delete(obj)
@@ -70,13 +78,16 @@ classdef VideoPlayer < handle
         end
 
         function start(obj)
-            if isempty(obj.nextVids)
-                % first call to start
-                [obj.playingVid, obj.playingVidDur, obj.vidIndex] = obj.openNextVid(false);
-            end
-            Screen('PlayMovie', obj.playingVid, 1, double(obj.loopSingleVid), 0);
-            if obj.nextVidPrefetch == 2
-                Screen('PlayMovie', obj.nextVid, 1, 0, 0);
+            if ~obj.isPlaying
+                if isempty(obj.nextVids)
+                    % first call to start, or after a clean up
+                    [obj.playingVid, obj.playingVidDur, obj.vidIndex] = obj.openNextVid(false);
+                end
+                Screen('PlayMovie', obj.playingVid, 1, double(obj.loopSingleVid), obj.soundVolume);
+                if obj.nextVidPrefetch == 2
+                    Screen('PlayMovie', obj.nextVid, 1, 0, obj.soundVolume);
+                end
+                obj.isPlaying = true;
             end
         end
 
@@ -91,6 +102,7 @@ classdef VideoPlayer < handle
                 Screen('CloseMovie', obj.playingVid);
                 [obj.playingVid, obj.playingVidDur, obj.vidIndex] = deal(obj.nextVid, obj.nextVidDur, obj.nextVidIndex);
                 tex = Screen('GetMovieImage', obj.wpnt, obj.playingVid, 0);
+                obj.lastTex = tex;
                 obj.nextVidPrefetch = 0;
             elseif ~obj.loopSingleVid
                 % We start background loading of the next movie 0.5 seconds
@@ -116,16 +128,22 @@ classdef VideoPlayer < handle
                     obj.nextVidPrefetch = 2;
 
                     % Start it:
-                    Screen('PlayMovie', obj.nextVid, 1, 0, 0);
+                    Screen('PlayMovie', obj.nextVid, 1, 0, obj.soundVolume);
                 end
+            end
+            if tex==0
+                tex = obj.lastTex;
+            elseif tex>0
+                obj.lastTex = tex;
             end
         end
 
         function stop(obj)
-             Screen('PlayMovie', obj.playingVid, 0);
-             if obj.nextVidPrefetch == 2
-                 Screen('PlayMovie', obj.nextVid, 0);
+            Screen('PlayMovie', obj.playingVid, 0);
+            if obj.nextVidPrefetch == 2
+                Screen('PlayMovie', obj.nextVid, 0);
             end
+            obj.isPlaying = false;
         end
 
         function cleanup(obj)
@@ -160,8 +178,10 @@ classdef VideoPlayer < handle
             obj.nextVidPrefetch = 0;
             obj.nextVids = [];
             obj.playingVid = [];
+            obj.lastTex = 0;
             obj.nextVidIndex = nan;
             obj.nextVid = [];
+            obj.isPlaying = false;
         end
     end
 
@@ -190,14 +210,15 @@ classdef VideoPlayer < handle
                 id = obj.nextVids(1);
                 obj.nextVids(1) = [];
             end
+            specialFlags = 0;
+            if obj.soundVolume==0
+                specialFlags = 2;
+            end
             if async
-                Screen('OpenMovie', obj.wpnt, char(obj.videos(id)), 1, 1, 2);
+                Screen('OpenMovie', obj.wpnt, char(obj.videos(id)), 1, 1, specialFlags);
                 [vpnt,vdur] = deal(nan);
-			else
-				disp('DEBUG: ');
-				disp(obj.wpnt)
-				disp(char(obj.videos(id)))
-                [vpnt,vdur] = Screen('OpenMovie', obj.wpnt, char(obj.videos(id)), 0, 1, 2);
+            else
+                [vpnt,vdur] = Screen('OpenMovie', obj.wpnt, char(obj.videos(id)), 0, 1, specialFlags);
             end
         end
     end

@@ -308,7 +308,10 @@ void mexFunction(int nlhs_, mxArray *plhs_[], int nrhs_, const mxArray *prhs_[])
             // no handle needed
         }
         else if (action == Action::GetStreams)
+        {
+            // no handle needed, need type
             type = ExportedType::Receiver;
+        }
         else
         {
             // All the below code that deals with passing instances around assumes the handle_type is unsigned int
@@ -546,7 +549,14 @@ void mexFunction(int nlhs_, mxArray *plhs_[], int nrhs_, const mxArray *prhs_[])
                                     stream = c_stream;
                                     mxFree(c_stream);
                                 }
-                                plhs_[0] = mxTypes::ToMatlab(TittaLSL::Receiver::GetStreams(stream ? *stream : ""));
+                                std::optional<double> timeout;
+                                if (nrhs_ > 2 && !mxIsEmpty(prhs_[2]))
+                                {
+                                    if (!mxIsDouble(prhs_[2]) || mxIsComplex(prhs_[2]) || !mxIsScalar(prhs_[2]))
+                                        throw "TittaLSL::Receiver::GetStreams: Third argument must be a scalar double.";
+                                    timeout = *static_cast<double*>(mxGetData(prhs_[2]));
+                                }
+                                plhs_[0] = mxTypes::ToMatlab(TittaLSL::Receiver::GetStreams(stream ? *stream : "", timeout));
                                 break;
                             }
                             case Action::GetInfo:
