@@ -23,7 +23,7 @@
 % So if your two monitors have different resolutions, either adjust the
 % code, or look into solutions e.g. with PsychImaging()'s 'UsePanelFitter'.
 
-clear
+clear all
 sca
 
 DEBUGlevel              = 0;

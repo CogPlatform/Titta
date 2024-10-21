@@ -62,15 +62,17 @@ classdef NonHumanPrimateCalController < handle
                                     ];
         calVideoSize                = [300 300];
         calShowVideoWhenDone        = true;
-        calVideoSizeWhenDone        = [600 600];
-        calWhenDoneRewardDistFac    = .5;           % fraction of video width (so 0.5 means gaze anywhere on video, since distance is from center)
-        calWhenDoneRewardTime       = 500;          % ms
+        calShowVideoWhenDeactivated = true;
+        calVideoSizeWhenNotActive   = [600 600];
+        calNotActiveRewardDistFac   = .5;           % fraction of video width (so 0.5 means gaze anywhere on video, since distance is from center)
+        calNotActiveRewardTime      = 500;          % ms
 
         valVideoSize                = [300 300];
         valShowVideoWhenDone        = true;
-        valVideoSizeWhenDone        = [600 600];
-        valWhenDoneRewardDistFac    = .5;           % fraction of video width (so 0.5 means gaze anywhere on video, since distance is from center)
-        valWhenDoneRewardTime       = 500;          % ms
+        valShowVideoWhenDeactivated = true;
+        valVideoSizeNotActive        = [600 600];
+        valNotActiveRewardDistFac    = .5;          % fraction of video width (so 0.5 means gaze anywhere on video, since distance is from center)
+        valNotActiveRewardTime       = 500;         % ms
 
         calOnTargetTime             = 500;          % ms
         calOnTargetDistFac          = 1/3;          % max gaze distance to be considered close enough to a point to attempt calibration (factor of vertical size of screen)
@@ -273,7 +275,7 @@ classdef NonHumanPrimateCalController < handle
                         end
                     elseif obj.awaitingPointResult==2 && ~isempty(obj.lastUpdate) && strcmp(obj.lastUpdate{1},'val_discard')
                         % check this is for the expected point
-                        if obj.lastUpdate{2}==obj.valPoints(obj.valPoint) && all(obj.lastUpdate{3}==obj.valPoss(obj.valPoint,:))
+                        if all(obj.valPointsState==obj.pointStateEnum.nothing)
                             obj.awaitingPointResult = 0;
                             obj.clearValNow = false;
                             obj.shouldUpdateStatusText = true;
@@ -326,7 +328,6 @@ classdef NonHumanPrimateCalController < handle
                     else
                         obj.clearValNow = true; % always issue a validation clear, in case there is any data
                         obj.controlState = obj.stateEnum.val_validating;
-                        obj.shouldUpdateStatusText = true;
                         obj.calDisplay.videoSize = obj.valVideoSize;
                     end
                     obj.lastUpdate = {};
@@ -348,9 +349,12 @@ classdef NonHumanPrimateCalController < handle
                 case {'cal_deactivate','val_deactivate'}
                     obj.isActive = false;
                     obj.shouldUpdateStatusText = true;
-                    % backup Titta pacing duration and set to 0, since the
-                    % controller controls when data should be collected
+                    % reset Titta pacing duration
                     obj.setTittaPacing('',type(1:3));
+                    % setup non active display, if wanted
+                    if (strcmp(type(1:3),'cal') && obj.calShowVideoWhenDeactivated) || (strcmp(type(1:3),'val') && obj.valShowVideoWhenDeactivated)
+                        obj.setupNonActiveVideo();
+                    end
                     if bitget(obj.logTypes,1)
                         obj.log_to_cmd('controller deactivated for %s',ternary(startsWith(type,'cal'),'calibration','validation'));
                     end
@@ -503,7 +507,7 @@ classdef NonHumanPrimateCalController < handle
             obj.shouldUpdateStatusText = false;
         end
 
-        function draw(obj,wpnts,tick,sFac,offset)
+        function draw(obj,wpnts,tick,sFac,offset,onlyDrawParticipant)
             % wpnts: two window pointers. first is for participant screen,
             % second for operator
             % sFac and offset are used to scale from participant screen to
@@ -544,6 +548,10 @@ classdef NonHumanPrimateCalController < handle
                 if obj.awaitingPointResult~=1 && obj.drawExtraFrame
                     obj.drawExtraFrame = false;
                 end
+            end
+
+            if onlyDrawParticipant
+                return
             end
 
             % draw video rect for operator
@@ -1049,9 +1057,9 @@ classdef NonHumanPrimateCalController < handle
 
         function setupNonActiveVideo(obj)
             if strcmp(obj.stage,'cal')
-                obj.calDisplay.videoSize = obj.calVideoSizeWhenDone;
+                obj.calDisplay.videoSize = obj.calVideoSizeWhenNotActive;
             else
-                obj.calDisplay.videoSize = obj.valVideoSizeWhenDone;
+                obj.calDisplay.videoSize = obj.valVideoSizeNotActive;
             end
             obj.drawState = 1;
             obj.isNonActiveShowingVideo = true;
@@ -1068,11 +1076,11 @@ classdef NonHumanPrimateCalController < handle
             minDist = min([distM, distL, distR]);
 
             if strcmp(obj.stage,'cal')
-                distFac = obj.calWhenDoneRewardDistFac;
-                dur     = obj.calWhenDoneRewardTime;
+                distFac = obj.calNotActiveRewardDistFac;
+                dur     = obj.calNotActiveRewardTime;
             else
-                distFac = obj.valWhenDoneRewardDistFac;
-                dur     = obj.valWhenDoneRewardTime;
+                distFac = obj.valNotActiveRewardDistFac;
+                dur     = obj.valNotActiveRewardTime;
             end
             sz = obj.calDisplay.videoSize;
             dist = sz(1)*distFac;
