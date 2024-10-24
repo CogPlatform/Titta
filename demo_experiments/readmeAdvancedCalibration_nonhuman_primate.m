@@ -54,8 +54,6 @@ videoExt                = 'mp4';
 numCalPoints            = 2;        % 2, 3 or 5
 forceRewardButton       = 'j';
 skipButton				= 'x';
-[w,h]  = Screen('WindowSize',0);
-winrect	= [0 0 round(w/1.25) round(h/1.25)];
 if IsWin
 	scrParticipant          = 1;
 	scrOperator             = 2;
@@ -176,6 +174,8 @@ try
 
 	PsychDefaultSetup(2);
     Screen('Preference', 'SyncTestSettings', 0.002);    % the systems are a little noisy, give the test a little more leeway
+    [w,h]  = Screen('WindowSize',0);
+	winrect	= [0 0 round(w/1.25) round(h/1.25)];
 	[wpntP,winRectP] = PsychImaging('OpenWindow', scrParticipant, bgClr, winrect, [], [], [], 4, [], kPsychGUIWindow);
     [w,h]  = Screen('WindowSize',scrOperator);
 	winrect(1) = 20;
