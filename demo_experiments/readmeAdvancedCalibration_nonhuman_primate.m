@@ -40,12 +40,13 @@ videoFolder             = '/home/cog/Videos/';
 videoExt                = 'mp4';
 numCalPoints            = 2;        % 2, 3 or 5
 forceRewardButton       = 'j';
+skipButton				= 'x';
 if IsWin
 	scrParticipant          = 1;
 	scrOperator             = 2;
 	address					= []; %leave empty to autodiscover
 else
-	scrParticipant          = 1;
+	scrParticipant          = 0;
 	scrOperator             = 0;
 	address					= 'tet-tcp://169.254.7.39'; %edit for your explicit address, 
 end
@@ -147,16 +148,21 @@ try
         % make screen partially transparent on OSX and windows vista or
         % higher, so we can debug.
         PsychDebugWindowConfiguration;
-    end
+	end
+	Screen('Preference', 'VisualDebugLevel', 3);
     if DEBUGlevel
         % Be pretty verbose about information and hints to optimize your code and system.
         Screen('Preference', 'Verbosity', 4);
     else
         % Only output critical errors and warnings.
         Screen('Preference', 'Verbosity', 2);
-    end
+	end
+
+	PsychDefaultSetup(2);
     Screen('Preference', 'SyncTestSettings', 0.002);    % the systems are a little noisy, give the test a little more leeway
-    [wpntP,winRectP] = PsychImaging('OpenWindow', scrParticipant, bgClr, [], [], [], [], 4);
+    [w,h]  = Screen('WindowSize',0);
+	winrect	= [0 0 round(w/1.25) round(h/1.25)];
+	[wpntP,winRectP] = PsychImaging('OpenWindow', scrParticipant, bgClr, winrect, [], [], [], 4, [], kPsychGUIWindow);
     [w,h]  = Screen('WindowSize',scrOperator);
 	winrect	= [0 0 round(w/1.25) round(h/1.25)];
     [wpntO,winRectO] = PsychImaging('OpenWindow', scrOperator   , bgClr, winrect, [], [], [], 4, [], kPsychGUIWindow);
@@ -237,7 +243,9 @@ try
         [dur,currentlyInArea] = getGazeDurationInArea(EThndl,tobiiStartT,[],winRectP(3:4),fixRect,true);
         if dur>fixMinDur
             break;
-        end
+		end
+
+		if KbCheck; break; end
 
         % provide reward
         rewarding = provideRewardHelper(rewardProvider,currentlyInArea,forceRewardButton);
@@ -310,7 +318,9 @@ try
         [dur,currentlyInArea] = getGazeDurationInArea(EThndl,tobiiStartT,[],winRectP(3:4),fixRect,true);
         if dur>fixMinDur
             break;
-        end
+		end
+
+		if KbCheck; break; end
 
         % provide reward
         rewarding = provideRewardHelper(rewardProvider,currentlyInArea,forceRewardButton);
