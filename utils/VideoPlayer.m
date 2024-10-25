@@ -1,5 +1,5 @@
 classdef VideoPlayer < handle
-    properties (Access = protected, Hidden = true)
+    properties (SetAccess = protected)
         wpnt;
 
         % state
@@ -134,7 +134,7 @@ classdef VideoPlayer < handle
                 return
             end
             try
-                Screen('PlayMovie', obj.playingVid, 0);
+                try Screen('PlayMovie', obj.playingVid, 0); end
                 Screen('CloseMovie', obj.playingVid);
 
                 if obj.nextVidPrefetch == 1
@@ -151,7 +151,7 @@ classdef VideoPlayer < handle
                     Screen('PlayMovie', obj.nextVid, 0);
                     Screen('CloseMovie', obj.nextVid);
                 end
-            catch
+			catch ME
                 % the above may fail if window was closed already since
                 % we're cleaning up from a previous run
             end
@@ -193,7 +193,10 @@ classdef VideoPlayer < handle
             if async
                 Screen('OpenMovie', obj.wpnt, char(obj.videos(id)), 1, 1, 2);
                 [vpnt,vdur] = deal(nan);
-            else
+			else
+				disp('DEBUG: ');
+				disp(obj.wpnt)
+				disp(char(obj.videos(id)))
                 [vpnt,vdur] = Screen('OpenMovie', obj.wpnt, char(obj.videos(id)), 0, 1, 2);
             end
         end

@@ -32,7 +32,7 @@
 clear
 sca
 
-DEBUGlevel              = 0;
+DEBUGlevel              = 1;
 fixClrs                 = [0 255];
 bgClr                   = 127;
 eyeColors               = {[255 127 0],[0 95 191]}; % for live data view on operator screen
@@ -41,12 +41,14 @@ videoExt                = 'mp4';
 numCalPoints            = 2;        % 2, 3 or 5
 forceRewardButton       = 'j';
 skipButton				= 'x';
+[w,h]  = Screen('WindowSize',0);
+winrect	= [0 0 round(w/1.25) round(h/1.25)];
 if IsWin
 	scrParticipant          = 1;
 	scrOperator             = 2;
 	address					= []; %leave empty to autodiscover
 else
-	scrParticipant          = 0;
+	scrParticipant			= 0;
 	scrOperator             = 0;
 	address					= 'tet-tcp://169.254.7.39'; %edit for your explicit address, 
 end
@@ -160,11 +162,9 @@ try
 
 	PsychDefaultSetup(2);
     Screen('Preference', 'SyncTestSettings', 0.002);    % the systems are a little noisy, give the test a little more leeway
-    [w,h]  = Screen('WindowSize',0);
-	winrect	= [0 0 round(w/1.25) round(h/1.25)];
 	[wpntP,winRectP] = PsychImaging('OpenWindow', scrParticipant, bgClr, winrect, [], [], [], 4, [], kPsychGUIWindow);
     [w,h]  = Screen('WindowSize',scrOperator);
-	winrect	= [0 0 round(w/1.25) round(h/1.25)];
+	winrect(1) = 20;
     [wpntO,winRectO] = PsychImaging('OpenWindow', scrOperator   , bgClr, winrect, [], [], [], 4, [], kPsychGUIWindow);
     hz=Screen('NominalFrameRate', wpntP);
     Priority(1);
