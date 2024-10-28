@@ -177,7 +177,7 @@ try
     % renderer is the default on all operating systems, so this is more of
     % a "better safe than sorry" setting.
     Screen('Preference', 'TextRenderer', 1);
-    KbName('UnifyKeyNames');    % for correct operation of the setup/calibration interface, calling this is required
+    KbName('UnifyKeyNames');    % for correct operation of the setup/calibration interface, calling this is required (NB: also done by PsychDefaultSetup(2) above)
 
     calController.scrRes = winRectP(3:4);
 

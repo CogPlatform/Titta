@@ -23,7 +23,7 @@ classdef VideoCalibrationDisplay < handle
         cumDurations;
         videoPlayer;
         tex                 = 0;
-        masktex             = [];
+        masktex             = 0;
     end
     
     
@@ -42,10 +42,14 @@ classdef VideoCalibrationDisplay < handle
             if ~isempty(obj.videoPlayer)
                 obj.videoPlayer.cleanup();
             end
-            if ~isempty(obj.masktex) && obj.masktex > 0 && Screen(obj.masktex,'WindowKind') == -1
+            if obj.tex>0
+                Screen('Close', obj.tex);
+            end
+            obj.tex = 0;
+            if obj.masktex>0 && Screen(obj.masktex,'WindowKind')==-1
                 try Screen('Close',obj.masktex); end %#ok<*TRYNC>
             end
-            obj.masktex = [];
+            obj.masktex = 0;
         end
 
         function pos = get.pos(obj)
@@ -56,7 +60,7 @@ classdef VideoCalibrationDisplay < handle
             % last two inputs, tick (monotonously increasing integer) and
             % stage ("cal" or "val") are not used in this code
 
-            if obj.doMask && isempty(obj.masktex)
+            if obj.doMask && obj.masktex==0
                 obj.masktex = CreateProceduralSmoothedDisc(wpnt,500, 500, [], 250, 60, true, 2);
             end
             
@@ -125,8 +129,9 @@ classdef VideoCalibrationDisplay < handle
                     end
                     rect = CenterRectOnPointd(ts,curPos(1),curPos(2));
                     Screen('DrawTexture',wpnt,obj.tex,[],rect);
-                    if obj.doMask
-                        Screen('DrawTexture',wpnt,obj.masktex,[],rect,[], [], 1, [0.5 0.5 0.5 1]');
+                    if obj.doMask && obj.masktex>0
+                        maskClr = obj.getColorForWindow(color2RGBA(obj.bgColor),true);
+                        Screen('DrawTexture',wpnt,obj.masktex,[],rect,[],[],1,maskClr');
                     end
                 end
             end
@@ -134,8 +139,8 @@ classdef VideoCalibrationDisplay < handle
     end
     
     methods (Access = private, Hidden)
-        function clr = getColorForWindow(obj,clr)
-            if obj.qFloatColorRange
+        function clr = getColorForWindow(obj,clr,forceFloatRange)
+            if obj.qFloatColorRange || (nargin>2&&forceFloatRange)
                 clr = double(clr)/255;
             end
         end
